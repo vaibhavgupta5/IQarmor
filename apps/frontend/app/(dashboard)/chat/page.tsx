@@ -18,23 +18,21 @@ export default function ChatPage() {
   const { riskScores } = useRiskStore();
   const { approvals, setApprovals } = useApprovalsStore();
   const { socket, connected } = useSocket();
-  
+
   const [input, setInput] = useState('');
-  const [messages, setMessages] = useState<{ role: 'user' | 'agent', text: string }[]>([]);
+  const [messages, setMessages] = useState<{ role: 'user' | 'agent'; text: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  
+  const [historyLogs, setHistoryLogs] = useState<any[]>([]);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const traceEndRef = useRef<HTMLDivElement>(null);
   const auditEndRef = useRef<HTMLDivElement>(null);
 
   const [fallbackId] = useState(() => activeConversationId || 'chat-' + Math.random().toString(36).substring(2, 9));
   const currentId = activeConversationId || fallbackId;
 
   useEffect(() => {
-    if (!activeConversationId) {
-      setActiveConversation(currentId);
-    }
+    if (!activeConversationId) setActiveConversation(currentId);
   }, [activeConversationId, currentId, setActiveConversation]);
 
   useEffect(() => {
@@ -43,115 +41,85 @@ export default function ChatPage() {
   }, [currentId]);
 
   useEffect(() => {
-    if (!socket || !connected || !currentId) {
-      console.log('CHAT PAGE [WS Room]: cannot emit room:join. socket:', !!socket, 'connected:', connected, 'currentId:', currentId);
-      return;
-    }
-    console.log('CHAT PAGE [WS Room]: emitting room:join for conversation room:', currentId);
+    if (!socket || !connected || !currentId) return;
     socket.emit('room:join', currentId);
   }, [socket, connected, currentId]);
-
-  const activeTrace = toolTrace.filter(t => t.conversationId === currentId);
-  const currentRisk = riskScores.get(currentId) || 0;
-
-  const [historyLogs, setHistoryLogs] = useState<any[]>([]);
 
   useEffect(() => {
     if (!session?.access_token) return;
     api.chat.listHistory(session.access_token)
-      .then(res => {
-        const list = (res as any).data || res;
-        setConversations(list);
-      })
-      .catch(err => console.error('CHAT PAGE [History]: failed to fetch history:', err));
+      .then(res => setConversations((res as any).data || res))
+      .catch(err => console.error('CHAT PAGE [History]:', err));
   }, [session?.access_token, setConversations]);
 
   useEffect(() => {
     if (!session?.access_token) return;
-    console.log('CHAT PAGE [Approvals]: fetching pending approvals from backend API...');
     api.approvals.list({ status: 'PENDING' }, session.access_token)
-      .then(res => {
-        const list = (res as any).data || res;
-        console.log('CHAT PAGE [Approvals]: loaded pending approvals list:', list);
-        setApprovals(list);
-      })
-      .catch((err) => {
-        console.error('CHAT PAGE [Approvals]: failed to fetch approvals:', err);
-      });
+      .then(res => setApprovals((res as any).data || res))
+      .catch(err => console.error('CHAT PAGE [Approvals]:', err));
   }, [session?.access_token, setApprovals]);
-
-  const handleDecision = async (id: string, decision: 'APPROVED' | 'REJECTED') => {
-    if (!session?.access_token) return;
-    console.log(`CHAT PAGE [Approvals]: submitting decision '${decision}' for approval request ID: ${id}`);
-    try {
-      await api.approvals.decide(id, decision, session.access_token);
-      toast.success(`Request ${decision.toLowerCase()}`);
-      console.log(`CHAT PAGE [Approvals]: decision '${decision}' accepted. Removing ID from store: ${id}`);
-      setApprovals(approvals.filter(a => a.id !== id));
-    } catch (err: any) {
-      console.error('CHAT PAGE [Approvals]: failed to submit decision:', err);
-      toast.error(err.message || 'Failed to submit decision');
-    }
-  };
 
   useEffect(() => {
     if (!session?.access_token || !currentId) return;
-    
     api.audit.conversation(currentId, session.access_token)
-      .then(res => {
-        if (res?.data?.events) {
-          setHistoryLogs(res.data.events);
-        }
-      })
+      .then(res => { if (res?.data?.events) setHistoryLogs(res.data.events); })
       .catch(() => {});
   }, [currentId, session?.access_token]);
+
+  const activeTrace = toolTrace.filter(t => t.conversationId === currentId);
+  const currentRisk = riskScores.get(currentId) || 0;
+
+  const liveLogsForRender = [...activeTrace]
+    .filter(trace => !historyLogs.some(
+      h => h.toolName === trace.toolName &&
+        new Date(h.timestamp).getTime() === new Date(trace.timestamp).getTime()
+    ))
+    .reverse();
+
+  const historyLogsForRender = historyLogs;
 
   const combinedLogs = [...historyLogs];
   for (const trace of activeTrace) {
     const exists = historyLogs.some(
-      h => h.toolName === trace.toolName && new Date(h.timestamp).getTime() === new Date(trace.timestamp).getTime()
+      h => h.toolName === trace.toolName &&
+        new Date(h.timestamp).getTime() === new Date(trace.timestamp).getTime()
     );
-    if (!exists) {
-      combinedLogs.push(trace);
-    }
+    if (!exists) combinedLogs.push(trace);
   }
 
-  // Auto-scroll messages
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, loading]);
+  const pendingApprovals = approvals.filter(
+    a => a.conversationId === currentId && a.status === 'PENDING'
+  );
 
-  // Auto-scroll tool trace
-  useEffect(() => {
-    traceEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [activeTrace]);
-
-  // Auto-scroll audit logs
-  useEffect(() => {
-    auditEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [combinedLogs.length]);
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, loading]);
+  useEffect(() => { auditEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [combinedLogs.length]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || !session?.access_token) return;
-
     const text = input;
     setInput('');
     setMessages(prev => [...prev, { role: 'user', text }]);
     setLoading(true);
-
     try {
-      const response = await api.chat.send({
-        message: text,
-        conversationId: currentId,
-      }, session.access_token);
-      
+      const response = await api.chat.send({ message: text, conversationId: currentId }, session.access_token);
       const data = response.data || response;
       setMessages(prev => [...prev, { role: 'agent', text: data.message }]);
     } catch (err: any) {
       toast.error(err.message || 'Failed to send message');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDecision = async (id: string, decision: 'APPROVED' | 'REJECTED') => {
+    if (!session?.access_token) return;
+    try {
+      await api.approvals.decide(id, decision, session.access_token);
+      toast.success(`Request ${decision.toLowerCase()}`);
+      setApprovals(approvals.filter(a => a.id !== id));
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to submit decision');
     }
   };
 
@@ -170,42 +138,122 @@ export default function ChatPage() {
     setHistoryLogs([]);
   };
 
+  const borderColor = (decision: string) => {
+    if (decision === 'BLOCK' || decision?.includes('INJECTION')) return '#ef4444';
+    if (decision === 'HOLD_FOR_APPROVAL') return '#f59e0b';
+    if (decision === 'RUNNING') return '#3b82f6';
+    return '#22c55e';
+  };
+
+  const renderTraceCard = (event: any, key: string | number) => {
+    const isAlreadyPending = pendingApprovals.some(a => a.toolName === event.toolName);
+    return (
+      <Card
+        key={key}
+        className="animate-in fade-in slide-in-from-top-4 border-l-4 rounded-none bg-[#050505] border-[#1A1A1A]"
+        style={{ borderLeftColor: borderColor(event.decision) }}
+      >
+        <CardContent className="p-3 space-y-2">
+          <div className="flex justify-between items-start">
+            <div>
+              <div className="font-mono text-sm font-semibold flex items-center gap-1.5 flex-wrap">
+                {event.toolName}
+                {event.serverName && (
+                  <span className="text-[10px] font-normal px-1.5 py-0.5 rounded bg-muted text-muted-foreground border">
+                    {event.serverName}
+                  </span>
+                )}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {new Date(event.timestamp).toLocaleTimeString()}
+                {event.latencyMs ? ` · ${event.latencyMs}ms` : ''}
+              </div>
+            </div>
+            {event.decision === 'RUNNING' ? (
+              <div className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-semibold tracking-wide uppercase border-[#3B82F6] text-[#3B82F6] bg-[#3B82F6]/10 gap-1 shrink-0">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                RUNNING
+              </div>
+            ) : (
+              <VerdictBadge verdict={event.decision as any} />
+            )}
+          </div>
+
+          <JsonViewer data={event.params} />
+
+          <div className="text-sm mt-2 border-t pt-2">
+            <span className="font-medium">Reason:</span> {event.reason}
+          </div>
+
+          {event.riskContrib > 0 && (
+            <div className="text-xs font-semibold text-amber-600 mt-1">
+              +{event.riskContrib} Risk Added
+            </div>
+          )}
+
+          {event.decision === 'HOLD_FOR_APPROVAL' && !isAlreadyPending && (() => {
+            const matchingApproval = approvals.find(
+              a => a.conversationId === currentId && a.toolName === event.toolName
+            );
+            if (!matchingApproval) return null;
+            return (
+              <div className="mt-2 space-y-2 border-t pt-2">
+                <div className="text-xs font-semibold text-amber-500 flex items-center gap-2">
+                  <div className="h-2 w-2 rounded-full bg-amber-500" />
+                  Awaiting Approval...
+                </div>
+                <div className="flex gap-2 mt-2">
+                  <Button size="sm" variant="destructive" className="h-7 text-xs px-2.5 rounded-none" onClick={() => handleDecision(matchingApproval.id, 'REJECTED')}>
+                    Reject
+                  </Button>
+                  <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white h-7 text-xs px-2.5 rounded-none" onClick={() => handleDecision(matchingApproval.id, 'APPROVED')}>
+                    Approve
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
+        </CardContent>
+      </Card>
+    );
+  };
+
   return (
     <div className="flex-1 grid grid-cols-1 md:grid-cols-6 h-full overflow-hidden relative">
-      
-      {/* Toggle Sidebar Button (When Closed) */}
+
       {!isSidebarOpen && (
         <div className="hidden md:block absolute left-0 top-1/2 -translate-y-1/2 z-50">
-           <Button variant="outline" size="icon" className="h-8 w-5 rounded-none bg-background shadow-md border-y border-r border-l-0 hover:bg-muted" onClick={() => setIsSidebarOpen(true)}>
-             <ChevronRight className="h-4 w-4" />
-           </Button>
+          <Button variant="outline" size="icon" className="h-8 w-5 rounded-none bg-background shadow-md border-y border-r border-l-0 hover:bg-muted" onClick={() => setIsSidebarOpen(true)}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
         </div>
       )}
 
-      {/* LEFT SIDEBAR: History */}
       <div className={`${isSidebarOpen ? 'md:col-span-1 md:flex' : 'hidden'} hidden flex-col border-r h-full bg-[#030303] min-h-0 transition-all relative`}>
-        {/* Toggle Sidebar Button (When Open) */}
         <div className="hidden md:block absolute -right-5 top-1/2 -translate-y-1/2 z-50">
-           <Button variant="outline" size="icon" className="h-8 w-5 rounded-none bg-background shadow-md border-y border-r border-l-0 hover:bg-muted" onClick={() => setIsSidebarOpen(false)}>
-              <ChevronLeft className="h-4 w-4" />
-           </Button>
+          <Button variant="outline" size="icon" className="h-8 w-5 rounded-none bg-background shadow-md border-y border-r border-l-0 hover:bg-muted" onClick={() => setIsSidebarOpen(false)}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
         </div>
-
         <div className="p-4 border-b flex justify-between items-center bg-[#070707] shrink-0">
           <h2 className="font-semibold tracking-tight text-sm">Conversations</h2>
         </div>
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
-          <button 
+          <button
             onClick={() => setActiveConversation('chat-' + Math.random().toString(36).substring(2, 9))}
             className="w-full text-left px-3 py-2 text-xs rounded-none transition-colors hover:bg-muted text-purple-400 font-semibold mb-2"
           >
             + New Chat
           </button>
-          {conversations.map((conv) => (
-            <button 
+          {conversations.map(conv => (
+            <button
               key={conv.id}
               onClick={() => setActiveConversation(conv.id)}
-              className={`w-full text-left px-3 py-2 text-xs rounded-none truncate transition-colors ${currentId === conv.id ? 'bg-purple-900/40 text-purple-200 border-l-2 border-purple-500 font-medium' : 'hover:bg-muted text-muted-foreground border-l-2 border-transparent'}`}
+              className={`w-full text-left px-3 py-2 text-xs rounded-none truncate transition-colors ${
+                currentId === conv.id
+                  ? 'bg-purple-900/40 text-purple-200 border-l-2 border-purple-500 font-medium'
+                  : 'hover:bg-muted text-muted-foreground border-l-2 border-transparent'
+              }`}
               title={conv.intentLabel || conv.id}
             >
               {conv.intentLabel || conv.id.substring(0, 8)}
@@ -217,7 +265,6 @@ export default function ChatPage() {
         </div>
       </div>
 
-      {/* MIDDLE COLUMN: Chat */}
       <div className={`${isSidebarOpen ? 'md:col-span-3' : 'md:col-span-4'} flex flex-col border-r h-full min-h-0`}>
         <div className="p-4 border-b flex justify-between items-center bg-background/95 backdrop-blur z-10 shrink-0">
           <div>
@@ -235,7 +282,7 @@ export default function ChatPage() {
           {messages.length === 0 && (
             <div className="h-full flex flex-col items-center justify-center gap-4 text-muted-foreground text-sm">
               <p>Send a message to start the conversation...</p>
-              <div 
+              <div
                 onClick={() => setInput('Do web search for latest AI related content')}
                 className="cursor-pointer border border-dashed border-[#333] px-4 py-2 hover:border-purple-500 hover:text-purple-400 transition-colors bg-[#0A0A0A] text-xs font-mono"
               >
@@ -246,8 +293,8 @@ export default function ChatPage() {
           {messages.map((msg, i) => (
             <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[80%] rounded-none p-3 text-sm ${
-                msg.role === 'user' 
-                  ? 'bg-purple-600 text-white' 
+                msg.role === 'user'
+                  ? 'bg-purple-600 text-white'
                   : 'bg-[#0A0A0A] border border-[#1A1A1A] font-mono whitespace-pre-wrap'
               }`}>
                 {msg.text}
@@ -268,10 +315,10 @@ export default function ChatPage() {
 
         <div className="p-4 border-t bg-background shrink-0">
           <form onSubmit={handleSend} className="flex gap-2">
-            <Input 
-              value={input} 
-              onChange={e => setInput(e.target.value)} 
-              placeholder="Ask the agent to perform a task..." 
+            <Input
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              placeholder="Ask the agent to perform a task..."
               className="flex-1 font-mono text-sm rounded-none focus-visible:ring-purple-500"
               disabled={loading}
             />
@@ -282,10 +329,8 @@ export default function ChatPage() {
         </div>
       </div>
 
-      {/* RIGHT COLUMN: Tool Trace & Audit Logs */}
       <div className="md:col-span-2 flex flex-col h-full bg-muted/20 overflow-hidden border-l border-dashed border-[#1A1A1A]">
-        
-        {/* Upper half: Live Tool Trace */}
+
         <div className="flex flex-col h-1/2 min-h-0 border-b border-dashed border-[#1A1A1A]">
           <div className="p-4 border-b flex justify-between items-center bg-background/95 backdrop-blur z-10 shrink-0">
             <h2 className="font-semibold tracking-tight">Live Tool Trace</h2>
@@ -298,91 +343,70 @@ export default function ChatPage() {
               </Button>
             </div>
           </div>
-          
+
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            {combinedLogs.length === 0 && (
-              <div className="text-center text-sm text-muted-foreground mt-10">
-                No tool calls yet.
-              </div>
-            )}
-            {combinedLogs.map((event, i) => (
-              <Card key={i} className="animate-in fade-in slide-in-from-top-4 border-l-4 rounded-none bg-[#050505] border-[#1A1A1A]" style={{ borderLeftColor: event.decision === 'BLOCK' || event.decision?.includes('INJECTION') ? '#ef4444' : event.decision === 'HOLD_FOR_APPROVAL' ? '#f59e0b' : event.decision === 'RUNNING' ? '#3b82f6' : '#22c55e' }}>
+
+            {pendingApprovals.map(approval => (
+              <Card
+                key={approval.id}
+                className="border-l-4 rounded-none bg-[#050505] border-[#1A1A1A] animate-in fade-in slide-in-from-top-4"
+                style={{ borderLeftColor: '#f59e0b' }}
+              >
                 <CardContent className="p-3 space-y-2">
                   <div className="flex justify-between items-start">
                     <div>
                       <div className="font-mono text-sm font-semibold flex items-center gap-1.5 flex-wrap">
-                        {event.toolName}
-                        {event.serverName && (
-                          <span className="text-[10px] font-normal px-1.5 py-0.5 rounded bg-muted text-muted-foreground border">
-                            {event.serverName}
-                          </span>
-                        )}
+                        {approval.toolName}
+                        <span className="text-[10px] font-normal px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                          awaiting approval
+                        </span>
                       </div>
-                      <div className="text-xs text-muted-foreground">{new Date(event.timestamp).toLocaleTimeString()} {event.latencyMs ? `· ${event.latencyMs}ms` : ''}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {new Date(approval.requestedAt).toLocaleTimeString()}
+                        {approval.expiresAt && ` · expires ${new Date(approval.expiresAt).toLocaleTimeString()}`}
+                      </div>
                     </div>
-                    {event.decision === 'RUNNING' ? (
-                      <div className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-semibold tracking-wide uppercase transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-[#3B82F6] text-[#3B82F6] bg-[#3B82F6]/10 gap-1 shrink-0">
-                        <Loader2 className="h-3 w-3 animate-spin text-[#3B82F6]" />
-                        RUNNING
-                      </div>
-                    ) : (
-                      <VerdictBadge verdict={event.decision as any} />
-                    )}
+                    <VerdictBadge verdict={'HOLD_FOR_APPROVAL' as any} />
                   </div>
-                  
-                  <JsonViewer data={event.params} />
-                  
-                  <div className="text-sm mt-2 border-t pt-2">
-                    <span className="font-medium">Reason:</span> {event.reason}
-                  </div>
-                  
-                  {event.riskContrib > 0 && (
-                    <div className="text-xs font-semibold text-amber-600 mt-1">
-                      +{event.riskContrib} Risk Added
+
+                  {approval.params && <JsonViewer data={approval.params} />}
+
+                  <div className="mt-2 space-y-2 border-t pt-2">
+                    <div className="text-xs font-semibold text-amber-500 flex items-center gap-2">
+                      <div className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+                      Awaiting your decision...
                     </div>
-                  )}
-
-                  {event.decision === 'HOLD_FOR_APPROVAL' && (() => {
-                    const matchingApproval = approvals.find(
-                      a => a.conversationId === currentId && a.toolName === event.toolName
-                    );
-                    
-                    if (!matchingApproval) return null;
-
-                    return (
-                      <div className="mt-2 space-y-2 border-t pt-2">
-                        <div className="text-xs font-semibold text-amber-500 flex items-center gap-2">
-                          <div className="h-2 w-2 rounded-full bg-amber-500" />
-                          Awaiting Approval...
-                        </div>
-                        <div className="flex gap-2 mt-2">
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            className="h-7 text-xs px-2.5 rounded-none"
-                            onClick={() => handleDecision(matchingApproval.id, 'REJECTED')}
-                          >
-                            Reject
-                          </Button>
-                          <Button
-                            size="sm"
-                            className="bg-green-600 hover:bg-green-700 text-white h-7 text-xs px-2.5 rounded-none"
-                            onClick={() => handleDecision(matchingApproval.id, 'APPROVED')}
-                          >
-                            Approve
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                  })()}
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="destructive" className="h-7 text-xs px-2.5 rounded-none" onClick={() => handleDecision(approval.id, 'REJECTED')}>
+                        Reject
+                      </Button>
+                      <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white h-7 text-xs px-2.5 rounded-none" onClick={() => handleDecision(approval.id, 'APPROVED')}>
+                        Approve
+                      </Button>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             ))}
-            <div ref={traceEndRef} />
+
+            {liveLogsForRender.map((event, i) => renderTraceCard(event, `live-${i}`))}
+
+            {liveLogsForRender.length > 0 && historyLogsForRender.length > 0 && (
+              <div className="flex items-center gap-2 py-1">
+                <div className="flex-1 h-px bg-[#1A1A1A]" />
+                <span className="text-[10px] text-muted-foreground font-mono">history</span>
+                <div className="flex-1 h-px bg-[#1A1A1A]" />
+              </div>
+            )}
+
+            {historyLogsForRender.map((event, i) => renderTraceCard(event, `hist-${i}`))}
+
+            {combinedLogs.length === 0 && pendingApprovals.length === 0 && (
+              <div className="text-center text-sm text-muted-foreground mt-10">No tool calls yet.</div>
+            )}
           </div>
         </div>
 
-        {/* Lower half: Real-time Security Audit Logs */}
         <div className="flex flex-col h-1/2 min-h-0 bg-[#020202]">
           <div className="p-4 border-b border-dashed border-[#1A1A1A] flex justify-between items-center bg-[#070707] shrink-0">
             <div className="flex items-center gap-2">
@@ -394,9 +418,7 @@ export default function ChatPage() {
 
           <div className="flex-1 overflow-y-auto p-4 font-mono text-xs space-y-2 text-green-400 select-all">
             {combinedLogs.length === 0 && (
-              <div className="text-muted-foreground text-center py-10">
-                No security audit logs recorded yet.
-              </div>
+              <div className="text-muted-foreground text-center py-10">No security audit logs recorded yet.</div>
             )}
             {combinedLogs.map((log, idx) => (
               <div key={idx} className="hover:bg-[#0A0A0A] p-2 border border-[#1A1A1A] rounded-none bg-[#050505] space-y-1.5 transition-all">
@@ -411,7 +433,13 @@ export default function ChatPage() {
                   <span className="text-blue-400 font-semibold">{log.toolName}</span>
                   <span className="text-muted-foreground font-light">|</span>
                   <span className="text-muted-foreground">Action:</span>
-                  <span className={log.decision === 'BLOCK' || log.decision.includes('INJECTION') ? 'text-rose-500 font-bold bg-rose-500/10 px-1 rounded' : log.decision === 'HOLD_FOR_APPROVAL' ? 'text-amber-500 font-semibold bg-amber-500/10 px-1 rounded' : 'text-emerald-500 font-medium bg-emerald-500/10 px-1 rounded'}>
+                  <span className={
+                    log.decision === 'BLOCK' || log.decision?.includes('INJECTION')
+                      ? 'text-rose-500 font-bold bg-rose-500/10 px-1 rounded'
+                      : log.decision === 'HOLD_FOR_APPROVAL'
+                      ? 'text-amber-500 font-semibold bg-amber-500/10 px-1 rounded'
+                      : 'text-emerald-500 font-medium bg-emerald-500/10 px-1 rounded'
+                  }>
                     {log.decision}
                   </span>
                 </div>
