@@ -46,21 +46,19 @@ export class McpManager {
     }
 
     if (config.transport === 'STREAMABLE_HTTP') {
-      const headers: Record<string, string> = {};
+      const headers: Record<string, string> = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      };
       const rawApiKey = config.authHeader || (config.name === 'context7-mcp' ? process.env.CONTEXT7_API_KEY : undefined);
       const apiKey = rawApiKey ? decrypt(rawApiKey) : undefined;
-      
+
       if (apiKey) {
         headers['CONTEXT7_API_KEY'] = apiKey;
         headers['Authorization'] = `Bearer ${apiKey}`;
       }
-      
-      // Add standard browser User-Agent to prevent WAF blocking
-      headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-      transport = new SSEClientTransport(new URL(urlStr), {
-        eventSourceInit: { headers } as any,
-        requestInit: { headers } as any
+      transport = new StreamableHTTPClientTransport(new URL(urlStr), {
+        requestInit: { headers }
       });
     } else if (config.transport === 'STDIO') {
       const parts = urlStr.split(' ');
@@ -181,44 +179,43 @@ export class McpManager {
     return this.getBestServerForTool(toolName)?.config.name || null;
   }
 
-  async probeServer(urlStr: string, transportType: string, authHeader?: string, customEnv?: Record<string, string>): Promise<any[]> {
-    let transport;
-    if (transportType === 'STREAMABLE_HTTP') {
-      const headers: Record<string, string> = {};
-      const apiKey = authHeader ? decrypt(authHeader) : undefined;
-      if (apiKey) {
-        headers['CONTEXT7_API_KEY'] = apiKey;
-        headers['Authorization'] = `Bearer ${apiKey}`;
-      }
-      
-      // Add standard browser User-Agent to prevent WAF blocking
-      headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-
-      transport = new SSEClientTransport(new URL(urlStr), {
-        eventSourceInit: { headers } as any,
-        requestInit: { headers } as any
-      });
-    } else if (transportType === 'STDIO') {
-      const parts = urlStr.split(' ');
-      const env: Record<string, string> = { ...process.env, ...customEnv } as Record<string, string>;
-      transport = new StdioClientTransport({
-        command: parts[0],
-        args: parts.slice(1),
-        env
-      });
-    } else {
-      throw new Error(`Unsupported transport: ${transportType}`);
+ async probeServer(urlStr: string, transportType: string, authHeader?: string, customEnv?: Record<string, string>): Promise<any[]> {
+  let transport;
+  if (transportType === 'STREAMABLE_HTTP') {
+    const headers: Record<string, string> = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    };
+    const apiKey = authHeader ? decrypt(authHeader) : undefined;
+    if (apiKey) {
+      headers['CONTEXT7_API_KEY'] = apiKey;
+      headers['Authorization'] = `Bearer ${apiKey}`;
     }
 
-    const client = new Client({ name: 'armoriq-probe-client', version: '1.0.0' }, { capabilities: {} });
-    await client.connect(transport);
-    try {
-      const toolsResponse = await client.listTools();
-      return toolsResponse.tools || [];
-    } finally {
-      await client.close().catch(() => {});
-    }
+    // ✅ Use StreamableHTTPClientTransport, not SSEClientTransport
+    transport = new StreamableHTTPClientTransport(new URL(urlStr), {
+      requestInit: { headers }
+    });
+  } else if (transportType === 'STDIO') {
+    const parts = urlStr.split(' ');
+    const env: Record<string, string> = { ...process.env, ...customEnv } as Record<string, string>;
+    transport = new StdioClientTransport({
+      command: parts[0],
+      args: parts.slice(1),
+      env
+    });
+  } else {
+    throw new Error(`Unsupported transport: ${transportType}`);
   }
+
+  const client = new Client({ name: 'armoriq-probe-client', version: '1.0.0' }, { capabilities: {} });
+  await client.connect(transport);
+  try {
+    const toolsResponse = await client.listTools();
+    return toolsResponse.tools || [];
+  } finally {
+    await client.close().catch(() => {});
+  }
+}
 
   async pingAll(): Promise<void> {
     for (const [name, server] of this.servers.entries()) {
