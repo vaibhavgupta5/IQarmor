@@ -1,0 +1,173 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Rule {
+  id          String        @id @default(cuid())
+  type        RuleType
+  toolPattern String
+  condition   Json?
+  priority    Int           @default(0)
+  ttlSeconds  Int?
+  onTimeout   TimeoutAction @default(DENY)
+  isActive    Boolean       @default(true)
+  createdBy   String
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([type])
+  @@index([isActive])
+  @@index([toolPattern])
+}
+
+model ConversationSession {
+  id          String            @id @default(cuid())
+  userId      String?
+  intentLabel String?
+  tokenCount  Int               @default(0)
+  budgetLimit Int?
+  status      SessionStatus     @default(ACTIVE)
+  riskScore   Float             @default(0)
+  startedAt   DateTime          @default(now())
+  endedAt     DateTime?
+  approvals   ApprovalRequest[]
+  auditLogs   AuditLog[]
+
+  @@index([userId])
+  @@index([status])
+}
+
+model AuditLog {
+  id             String              @id @default(cuid())
+  conversationId String
+  toolName       String
+  params         Json
+  decision       String
+  reason         String
+  result         Json?
+  latencyMs      Int?
+  riskContrib    Float               @default(0)
+  prevHash       String
+  hash           String
+  timestamp      DateTime            @default(now())
+  session        ConversationSession @relation(fields: [conversationId], references: [id])
+
+  @@index([conversationId])
+  @@index([toolName])
+  @@index([decision])
+  @@index([timestamp])
+}
+
+model ApprovalRequest {
+  id             String              @id @default(cuid())
+  conversationId String
+  toolName       String
+  params         Json
+  status         ApprovalStatus      @default(PENDING)
+  requestedAt    DateTime            @default(now())
+  expiresAt      DateTime
+  decidedAt      DateTime?
+  decidedBy      String?
+  escalatedTo    String?
+  session        ConversationSession @relation(fields: [conversationId], references: [id])
+
+  @@index([status])
+  @@index([conversationId])
+}
+
+model ConflictLog {
+  id            String   @id @default(cuid())
+  ruleAId       String
+  ruleBId       String
+  toolName      String
+  winningRuleId String
+  resolution    String
+  timestamp     DateTime @default(now())
+}
+
+model McpServerConfig {
+  id              String    @id @default(cuid())
+  name            String    @unique
+  transport       Transport
+  config          Json
+  isActive        Boolean   @default(true)
+  isHealthy       Boolean   @default(false)
+  toolCount       Int       @default(0)
+  lastPingAt      DateTime?
+  createdAt       DateTime  @default(now())
+  allowedTools    String[]
+  authHeader      String?
+  discoveredTools Json      @default("[]")
+  connectedAt     DateTime?
+  addedVia        AddedVia  @default(MANUAL)
+  deepLinkSource  String?
+
+  @@index([isActive])
+}
+
+model InjectionAttemptLog {
+  id             String   @id @default(cuid())
+  conversationId String
+  toolName       String
+  params         Json
+  injectionType  String
+  matchedPattern String
+  confidence     Float
+  timestamp      DateTime @default(now())
+
+  @@index([conversationId])
+  @@index([injectionType])
+}
+
+model RuleTemplate {
+  id          String @id @default(cuid())
+  name        String
+  description String
+  category    String
+  ruleConfig  Json
+  usageCount  Int    @default(0)
+}
+
+enum RuleType {
+  BLOCK
+  APPROVE
+  VALIDATE
+  BUDGET
+  RATE_LIMIT
+}
+
+enum TimeoutAction {
+  DENY
+  ESCALATE
+}
+
+enum SessionStatus {
+  ACTIVE
+  FLAGGED
+  TERMINATED
+  COMPLETED
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  TIMEOUT
+}
+
+enum Transport {
+  STDIO
+  STREAMABLE_HTTP
+}
+
+enum AddedVia {
+  MANUAL
+  DEEP_LINK
+  IMPORT
+}
