@@ -82,6 +82,9 @@ export async function runAgentLoop(
     }
 
     if (!response.functionCalls || response.functionCalls.length === 0) {
+      if (!response.text) {
+        console.error('[Gemini API] Empty response received:', JSON.stringify(response, null, 2));
+      }
       finalText = response.text || '';
       break;
     }
