@@ -43,17 +43,24 @@ for (const key of REQUIRED_ENV) {
 const app = express();
 const httpServer = createServer(app);
 
+const allowedOrigins = [
+  'http://localhost:3000', 
+  'https://iqarmor.vercel.app', 
+  'https://armoriq-frontend.vercel.app'
+];
+if (process.env.FRONTEND_URL) allowedOrigins.push(process.env.FRONTEND_URL);
+
 // Socket.io setup
 const io = new Server(httpServer, {
   cors: {
-    origin: process.env.FRONTEND_URL ?? 'http://localhost:3000',
+    origin: allowedOrigins,
     credentials: true
   }
 });
 setupSocketHandlers(io);
 
 // Middleware
-app.use(cors({ origin: process.env.FRONTEND_URL ?? 'http://localhost:3000', credentials: true }));
+app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(helmet());
 app.use(express.json({ limit: '1mb' }));
 app.use(correlationIdMiddleware);
