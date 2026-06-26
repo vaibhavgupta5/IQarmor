@@ -24,7 +24,6 @@ sequenceDiagram
     A->>A: Ask LLM (Gemini)
     A-->>PE: Proposes Tool Call
     
-    rect rgb(30, 30, 30)
     Note over PE: Policy Engine Evaluation
     PE->>PE: 1. Direct Injection Scan
     PE->>PE: 2. Block Rules Check
@@ -32,16 +31,15 @@ sequenceDiagram
     PE->>PE: 4. Rate & Budget Limits
     PE->>PE: 5. Intent Drift Check
     PE->>PE: 6. Approval Check
-    end
     
-    alt Verdict: BLOCK / FAIL
+    alt BLOCK or FAIL
         PE-->>A: Reject Execution
         A->>L: Log Rejection (SHA-256 Chained)
         A-->>U: Notify User (Blocked)
-    else Verdict: HOLD_FOR_APPROVAL
+    else HOLD_FOR_APPROVAL
         PE-->>A: Suspend Execution
         A->>U: Request Human Approval
-    else Verdict: ALLOW
+    else ALLOW
         PE-->>A: Proceed
         A->>MCP: Execute Tool
         MCP->>S: Dispatch over STDIO/HTTP
