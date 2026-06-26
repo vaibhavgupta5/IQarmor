@@ -41,6 +41,7 @@ for (const key of REQUIRED_ENV) {
 }
 
 const app = express();
+app.set('trust proxy', 1);
 const httpServer = createServer(app);
 
 const allowedOrigins = [
