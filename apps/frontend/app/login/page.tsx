@@ -142,7 +142,7 @@ export default function LoginPage() {
                 type="button" 
                 variant="outline" 
                 className="w-full h-12 font-mono text-xs tracking-widest border-dashed border-[#333333] text-muted-foreground bg-[#1A1A1A]/50 hover:bg-[#1A1A1A] hover:text-white rounded-none transition-colors" 
-                onClick={() => { setEmail('vaibhavgupta.v890@gmail.com'); setPassword('123456789'); }}
+                onClick={() => { setEmail('vaibhavgupta.v890@gmail.com'); setPassword('12345678'); }}
               >
                 [ FILL DEMO CREDENTIALS ]
               </Button>
