@@ -24,6 +24,7 @@ export interface ApprovalRequestEvent {
   toolName: string;
   params: Record<string, unknown>;
   expiresAt: string;
+  requestedAt : Date;
   status?: string;
 }
 
