@@ -32,68 +32,110 @@ export class McpManager {
   async initialize(): Promise<void> {
     const configs = await prisma.mcpServerConfig.findMany({ where: { isActive: true } });
     for (const config of configs) {
-      await this.connectServer(config).catch(e => logger.error({ err: e, serverName: config.name }, 'Failed to connect server'));
+      await this.connectServer(config).catch(e =>
+        logger.error({ err: e, serverName: config.name }, 'Failed to connect server')
+      );
     }
   }
 
+  /**
+   * Attempts StreamableHTTP first, falls back to SSE automatically.
+   * No DB changes needed — protocol is auto-detected at runtime.
+   */
+  private async createHttpTransport(
+    urlStr: string,
+    headers: Record<string, string>
+  ): Promise<{ transport: any; client: Client }> {
+    // --- Try StreamableHTTP first (modern protocol) ---
+    try {
+      const transport = new StreamableHTTPClientTransport(new URL(urlStr), {
+        requestInit: { headers }
+      });
+      const client = new Client({ name: 'armoriq-backend', version: '1.0.0' }, { capabilities: {} });
+      await client.connect(transport);
+      logger.info({ url: urlStr }, 'Connected via StreamableHTTP');
+      return { transport, client };
+    } catch (e: any) {
+      const isProtocolMismatch =
+        e?.code === 400 ||
+        e?.code === 404 ||
+        e?.code === 405 ||
+        e?.message?.includes('sessionId') ||
+        e?.message?.includes('405') ||
+        e?.message?.includes('404') ||
+        e?.message?.includes('400');
+
+      if (!isProtocolMismatch) throw e; // not a protocol issue, propagate
+
+      logger.warn({ url: urlStr, reason: e?.message }, 'StreamableHTTP failed, falling back to SSE');
+    }
+
+    // --- Fallback: SSE (older protocol, e.g. Smithery-hosted servers) ---
+    const transport = new SSEClientTransport(new URL(urlStr), {
+      eventSourceInit: { headers } as any,
+      requestInit: { headers } as any
+    });
+    const client = new Client({ name: 'armoriq-backend', version: '1.0.0' }, { capabilities: {} });
+    await client.connect(transport);
+    logger.info({ url: urlStr }, 'Connected via SSE fallback');
+    return { transport, client };
+  }
+
   async connectServer(config: any): Promise<void> {
-    let transport;
-    const dbConfig = typeof config.config === 'string' ? JSON.parse(config.config) : (config.config || {});
+    const dbConfig = typeof config.config === 'string'
+      ? JSON.parse(config.config)
+      : (config.config || {});
     const urlStr = dbConfig.url;
 
-    if (!urlStr) {
-      throw new Error(`Missing url in config for server: ${config.name}`);
-    }
+    if (!urlStr) throw new Error(`Missing url in config for server: ${config.name}`);
+
+    let client: Client;
 
     if (config.transport === 'STREAMABLE_HTTP') {
       const headers: Record<string, string> = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       };
-      const rawApiKey = config.authHeader || (config.name === 'context7-mcp' ? process.env.CONTEXT7_API_KEY : undefined);
+      const rawApiKey = config.authHeader ||
+        (config.name === 'context7-mcp' ? process.env.CONTEXT7_API_KEY : undefined);
       const apiKey = rawApiKey ? decrypt(rawApiKey) : undefined;
-
       if (apiKey) {
         headers['CONTEXT7_API_KEY'] = apiKey;
         headers['Authorization'] = `Bearer ${apiKey}`;
       }
 
-      transport = new StreamableHTTPClientTransport(new URL(urlStr), {
-        requestInit: { headers }
-      });
+      ({ client } = await this.createHttpTransport(urlStr, headers));
+
     } else if (config.transport === 'STDIO') {
       const parts = urlStr.split(' ');
-      
       const env: Record<string, string> = { ...process.env } as Record<string, string>;
       if (dbConfig.env) {
         for (const [k, v] of Object.entries(dbConfig.env)) {
           env[k] = decrypt(v as string);
         }
       }
-
-      transport = new StdioClientTransport({
+      const transport = new StdioClientTransport({
         command: parts[0],
         args: parts.slice(1),
         env
       });
+      client = new Client({ name: 'armoriq-backend', version: '1.0.0' }, { capabilities: {} });
+      await client.connect(transport);
+
     } else {
       throw new Error(`Unsupported transport: ${config.transport}`);
     }
 
-    const client = new Client({ name: 'armoriq-backend', version: '1.0.0' }, { capabilities: {} });
-    await client.connect(transport);
-
     const toolsResponse = await client.listTools();
     const toolsMap = new Map<string, DiscoveredTool>();
-    const allowedTools = config.allowedTools || [];
+    const allowedTools: string[] = config.allowedTools || [];
 
     for (const t of toolsResponse.tools) {
       if (allowedTools.length === 0 || allowedTools.includes(t.name)) {
-        const discovered: DiscoveredTool = {
+        toolsMap.set(t.name, {
           name: t.name,
           description: t.description,
           inputSchema: t.inputSchema as any
-        };
-        toolsMap.set(t.name, discovered);
+        });
       }
     }
 
@@ -114,9 +156,7 @@ export class McpManager {
       }
     });
 
-    try {
-      getIo().emit('tools:updated');
-    } catch(e) {}
+    try { getIo().emit('tools:updated'); } catch (_) {}
   }
 
   async disconnectServer(serverName: string): Promise<void> {
@@ -129,7 +169,10 @@ export class McpManager {
 
   private isRemoteUrl(urlStr?: string): boolean {
     if (!urlStr) return false;
-    return urlStr.startsWith('https://') || (urlStr.startsWith('http://') && !urlStr.includes('localhost') && !urlStr.includes('127.0.0.1'));
+    return urlStr.startsWith('https://') ||
+      (urlStr.startsWith('http://') &&
+        !urlStr.includes('localhost') &&
+        !urlStr.includes('127.0.0.1'));
   }
 
   private getBestServerForTool(toolName: string): ManagedServer | null {
@@ -138,11 +181,10 @@ export class McpManager {
 
     for (const server of this.servers.values()) {
       if (server.isHealthy && server.tools.has(toolName)) {
-        const dbConfig = typeof server.config.config === 'string' ? JSON.parse(server.config.config) : (server.config.config || {});
-        const urlStr = dbConfig.url;
-        const isRemote = this.isRemoteUrl(urlStr);
-        const priority = isRemote ? 2 : 1;
-        
+        const dbConfig = typeof server.config.config === 'string'
+          ? JSON.parse(server.config.config)
+          : (server.config.config || {});
+        const priority = this.isRemoteUrl(dbConfig.url) ? 2 : 1;
         if (priority > bestPriority) {
           bestPriority = priority;
           bestServer = server;
@@ -179,43 +221,48 @@ export class McpManager {
     return this.getBestServerForTool(toolName)?.config.name || null;
   }
 
- async probeServer(urlStr: string, transportType: string, authHeader?: string, customEnv?: Record<string, string>): Promise<any[]> {
-  let transport;
-  if (transportType === 'STREAMABLE_HTTP') {
-    const headers: Record<string, string> = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    };
-    const apiKey = authHeader ? decrypt(authHeader) : undefined;
-    if (apiKey) {
-      headers['CONTEXT7_API_KEY'] = apiKey;
-      headers['Authorization'] = `Bearer ${apiKey}`;
+  async probeServer(
+    urlStr: string,
+    transportType: string,
+    authHeader?: string,
+    customEnv?: Record<string, string>
+  ): Promise<any[]> {
+    let client: Client;
+
+    if (transportType === 'STREAMABLE_HTTP') {
+      const headers: Record<string, string> = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      };
+      const apiKey = authHeader ? decrypt(authHeader) : undefined;
+      if (apiKey) {
+        headers['CONTEXT7_API_KEY'] = apiKey;
+        headers['Authorization'] = `Bearer ${apiKey}`;
+      }
+
+      ({ client } = await this.createHttpTransport(urlStr, headers));
+
+    } else if (transportType === 'STDIO') {
+      const parts = urlStr.split(' ');
+      const env: Record<string, string> = { ...process.env, ...customEnv } as Record<string, string>;
+      const transport = new StdioClientTransport({
+        command: parts[0],
+        args: parts.slice(1),
+        env
+      });
+      client = new Client({ name: 'armoriq-probe-client', version: '1.0.0' }, { capabilities: {} });
+      await client.connect(transport);
+
+    } else {
+      throw new Error(`Unsupported transport: ${transportType}`);
     }
 
-    // ✅ Use StreamableHTTPClientTransport, not SSEClientTransport
-    transport = new StreamableHTTPClientTransport(new URL(urlStr), {
-      requestInit: { headers }
-    });
-  } else if (transportType === 'STDIO') {
-    const parts = urlStr.split(' ');
-    const env: Record<string, string> = { ...process.env, ...customEnv } as Record<string, string>;
-    transport = new StdioClientTransport({
-      command: parts[0],
-      args: parts.slice(1),
-      env
-    });
-  } else {
-    throw new Error(`Unsupported transport: ${transportType}`);
+    try {
+      const toolsResponse = await client.listTools();
+      return toolsResponse.tools || [];
+    } finally {
+      await client.close().catch(() => {});
+    }
   }
-
-  const client = new Client({ name: 'armoriq-probe-client', version: '1.0.0' }, { capabilities: {} });
-  await client.connect(transport);
-  try {
-    const toolsResponse = await client.listTools();
-    return toolsResponse.tools || [];
-  } finally {
-    await client.close().catch(() => {});
-  }
-}
 
   async pingAll(): Promise<void> {
     for (const [name, server] of this.servers.entries()) {
@@ -223,16 +270,24 @@ export class McpManager {
         await server.client.listTools();
         server.isHealthy = true;
         server.lastPingAt = new Date();
-        await prisma.mcpServerConfig.update({ where: { id: server.config.id }, data: { isHealthy: true }});
+        await prisma.mcpServerConfig.update({
+          where: { id: server.config.id },
+          data: { isHealthy: true }
+        });
       } catch (e) {
         server.isHealthy = false;
-        await prisma.mcpServerConfig.update({ where: { id: server.config.id }, data: { isHealthy: false }});
+        await prisma.mcpServerConfig.update({
+          where: { id: server.config.id },
+          data: { isHealthy: false }
+        });
         logger.warn({ serverName: name }, 'Server ping failed');
       }
     }
     try {
-      getIo().emit('server:health', Array.from(this.servers.entries()).map(([k, v]) => ({ name: k, healthy: v.isHealthy })));
-    } catch(e) {}
+      getIo().emit('server:health',
+        Array.from(this.servers.entries()).map(([k, v]) => ({ name: k, healthy: v.isHealthy }))
+      );
+    } catch (_) {}
   }
 }
 
@@ -247,23 +302,17 @@ function mapProperty(val: any): any {
 
   const prop: any = {
     type: genaiType,
-    description: val.description || '',
+    description: val.description || ''
   };
 
   if (val.type === 'array') {
-    if (val.items) {
-      prop.items = mapProperty(val.items);
-    } else {
-      prop.items = { type: Type.STRING };
-    }
+    prop.items = val.items ? mapProperty(val.items) : { type: Type.STRING };
   } else if (val.type === 'object' && val.properties) {
     prop.properties = {};
     for (const [k, subVal] of Object.entries(val.properties)) {
       prop.properties[k] = mapProperty(subVal);
     }
-    if (val.required) {
-      prop.required = val.required;
-    }
+    if (val.required) prop.required = val.required;
   }
 
   return prop;
@@ -271,13 +320,12 @@ function mapProperty(val: any): any {
 
 export function toGeminiDeclarations(tools: DiscoveredTool[]): any[] {
   return tools.map(t => {
-    let properties: Record<string, any> = {};
+    const properties: Record<string, any> = {};
     if (t.inputSchema.properties) {
       for (const [key, val] of Object.entries(t.inputSchema.properties)) {
         properties[key] = mapProperty(val);
       }
     }
-
     return {
       name: t.name,
       description: t.description || 'No description',
@@ -289,4 +337,3 @@ export function toGeminiDeclarations(tools: DiscoveredTool[]): any[] {
     };
   });
 }
-
