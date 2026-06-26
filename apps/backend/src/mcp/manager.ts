@@ -28,7 +28,6 @@ interface ManagedServer {
 
 export class McpManager {
   private servers: Map<string, ManagedServer> = new Map();
-  private toolIndex: Map<string, { serverName: string; tool: DiscoveredTool }> = new Map();
 
   async initialize(): Promise<void> {
     const configs = await prisma.mcpServerConfig.findMany({ where: { isActive: true } });
@@ -94,7 +93,6 @@ export class McpManager {
           inputSchema: t.inputSchema as any
         };
         toolsMap.set(t.name, discovered);
-        this.toolIndex.set(t.name, { serverName: config.name, tool: discovered });
       }
     }
 
@@ -125,34 +123,59 @@ export class McpManager {
     if (server) {
       await server.client.close();
       this.servers.delete(serverName);
-      for (const [tName, idx] of this.toolIndex.entries()) {
-        if (idx.serverName === serverName) this.toolIndex.delete(tName);
+    }
+  }
+
+  private isRemoteUrl(urlStr?: string): boolean {
+    if (!urlStr) return false;
+    return urlStr.startsWith('https://') || (urlStr.startsWith('http://') && !urlStr.includes('localhost') && !urlStr.includes('127.0.0.1'));
+  }
+
+  private getBestServerForTool(toolName: string): ManagedServer | null {
+    let bestServer: ManagedServer | null = null;
+    let bestPriority = -1;
+
+    for (const server of this.servers.values()) {
+      if (server.isHealthy && server.tools.has(toolName)) {
+        const dbConfig = typeof server.config.config === 'string' ? JSON.parse(server.config.config) : (server.config.config || {});
+        const urlStr = dbConfig.url;
+        const isRemote = this.isRemoteUrl(urlStr);
+        const priority = isRemote ? 2 : 1;
+        
+        if (priority > bestPriority) {
+          bestPriority = priority;
+          bestServer = server;
+        }
       }
     }
+    return bestServer;
   }
 
   getAllTools(): DiscoveredTool[] {
-    const all: DiscoveredTool[] = [];
+    const all = new Map<string, DiscoveredTool>();
     for (const server of this.servers.values()) {
       if (server.isHealthy) {
-        all.push(...Array.from(server.tools.values()));
+        for (const toolName of server.tools.keys()) {
+          const best = this.getBestServerForTool(toolName);
+          if (best && !all.has(toolName)) {
+            all.set(toolName, best.tools.get(toolName)!);
+          }
+        }
       }
     }
-    return all;
+    return Array.from(all.values());
   }
 
   getToolClient(toolName: string): Client | null {
-    const idx = this.toolIndex.get(toolName);
-    if (!idx) return null;
-    return this.servers.get(idx.serverName)?.client || null;
+    return this.getBestServerForTool(toolName)?.client || null;
   }
 
   getToolSchema(toolName: string): DiscoveredTool | null {
-    return this.toolIndex.get(toolName)?.tool || null;
+    return this.getBestServerForTool(toolName)?.tools.get(toolName) || null;
   }
 
   getToolServerName(toolName: string): string | null {
-    return this.toolIndex.get(toolName)?.serverName || null;
+    return this.getBestServerForTool(toolName)?.config.name || null;
   }
 
   async probeServer(urlStr: string, transportType: string, authHeader?: string, customEnv?: Record<string, string>): Promise<any[]> {

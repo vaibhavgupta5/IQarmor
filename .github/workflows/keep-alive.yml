@@ -4,30 +4,32 @@ on:
   schedule:
     # Runs every 5 minutes
     - cron: '*/5 * * * *'
-  workflow_dispatch: # Allows manual triggering from the GitHub Actions UI
+  workflow_dispatch:
 
 jobs:
   ping:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Ping Backend Server
+      - name: Ping Render Services
         env:
           BACKEND_URL: ${{ secrets.RENDER_BACKEND_URL }}
-        run: |
-          if [ -z "$BACKEND_URL" ]; then
-            echo "RENDER_BACKEND_URL secret is not set, skipping backend ping"
-          else
-            echo "Pinging $BACKEND_URL/health"
-            curl -sSf "$BACKEND_URL/health" > /dev/null || echo "Ping to backend failed, but continuing"
-          fi
-
-      - name: Ping MCP Server
-        env:
           MCP_URL: ${{ secrets.RENDER_MCP_URL }}
+
         run: |
-          if [ -z "$MCP_URL" ]; then
-            echo "RENDER_MCP_URL secret is not set, skipping MCP ping"
-          else
-            echo "Pinging $MCP_URL/health"
-            curl -sSf "$MCP_URL/health" > /dev/null || echo "Ping to MCP server failed, but continuing"
-          fi
+          URLS=(
+            "$BACKEND_URL"
+            "$MCP_URL"
+            "$FRONTEND_URL"
+            "$ADMIN_URL"
+          )
+
+          for URL in "${URLS[@]}"; do
+            if [ -z "$URL" ]; then
+              echo "Skipping empty URL"
+              continue
+            fi
+
+            echo "Pinging $URL/health"
+            curl -sSf "$URL/health" > /dev/null || echo "Ping to $URL failed, continuing"
+          done
