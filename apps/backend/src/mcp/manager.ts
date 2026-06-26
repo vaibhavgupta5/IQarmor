@@ -56,17 +56,10 @@ export class McpManager {
         headers['Authorization'] = `Bearer ${apiKey}`;
       }
 
-      const isRemote = urlStr.startsWith('https://') || (urlStr.startsWith('http://') && !urlStr.includes('localhost') && !urlStr.includes('127.0.0.1'));
-      if (isRemote) {
-        transport = new StreamableHTTPClientTransport(new URL(urlStr), {
-          requestInit: Object.keys(headers).length > 0 ? { headers } : undefined
-        });
-      } else {
-        transport = new SSEClientTransport(new URL(urlStr), {
-          eventSourceInit: Object.keys(headers).length > 0 ? ({ headers } as any) : undefined,
-          requestInit: Object.keys(headers).length > 0 ? ({ headers } as any) : undefined
-        });
-      }
+      transport = new SSEClientTransport(new URL(urlStr), {
+        eventSourceInit: Object.keys(headers).length > 0 ? ({ headers } as any) : undefined,
+        requestInit: Object.keys(headers).length > 0 ? ({ headers } as any) : undefined
+      });
     } else if (config.transport === 'STDIO') {
       const parts = urlStr.split(' ');
       
@@ -172,17 +165,10 @@ export class McpManager {
         headers['Authorization'] = `Bearer ${apiKey}`;
       }
 
-      const isRemote = urlStr.startsWith('https://') || (urlStr.startsWith('http://') && !urlStr.includes('localhost') && !urlStr.includes('127.0.0.1'));
-      if (isRemote) {
-        transport = new StreamableHTTPClientTransport(new URL(urlStr), {
-          requestInit: Object.keys(headers).length > 0 ? { headers } : undefined
-        });
-      } else {
-        transport = new SSEClientTransport(new URL(urlStr), {
-          eventSourceInit: Object.keys(headers).length > 0 ? ({ headers } as any) : undefined,
-          requestInit: Object.keys(headers).length > 0 ? ({ headers } as any) : undefined
-        });
-      }
+      transport = new SSEClientTransport(new URL(urlStr), {
+        eventSourceInit: Object.keys(headers).length > 0 ? ({ headers } as any) : undefined,
+        requestInit: Object.keys(headers).length > 0 ? ({ headers } as any) : undefined
+      });
     } else if (transportType === 'STDIO') {
       const parts = urlStr.split(' ');
       const env: Record<string, string> = { ...process.env, ...customEnv } as Record<string, string>;
