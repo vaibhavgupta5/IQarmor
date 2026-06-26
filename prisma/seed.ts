@@ -78,7 +78,7 @@ async function main() {
       data: {
         name: 'exa-mcp',
         transport: 'STDIO',
-        config: { url: 'npx -y exa-mcp-server' },
+        config: { url: 'npx exa-mcp-server' },
         isActive: true,
         allowedTools: [],
         discoveredTools: [],
