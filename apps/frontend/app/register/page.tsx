@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,19 @@ export default function RegisterPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const router = useRouter();
+
+  const mouseGlowRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (mouseGlowRef.current) {
+        mouseGlowRef.current.style.background = `radial-gradient(circle 600px at ${e.clientX}px ${e.clientY}px, rgba(124, 58, 237, 0.15), transparent 80%)`;
+      }
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    return () => window.removeEventListener("mousemove", handleMouseMove);
+  }, []);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,83 +65,139 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4 font-mono">
-      <div className="w-full max-w-md bg-[#0A0A0A] border border-dashed border-[#1A1A1A] p-6 rounded-sm">
-        <div className="space-y-1 mb-6">
-          <h1 className="text-xl font-bold tracking-tight text-primary">// CREATE ADMIN ACCOUNT</h1>
-          <p className="text-xs text-muted-foreground">
-            Register a new administrative identity.
-          </p>
-        </div>
+    <div className="min-h-screen relative overflow-hidden bg-black font-mono">
+      {/* Interactive Grid Background */}
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff05_1px,transparent_1px),linear-gradient(to_bottom,#ffffff05_1px,transparent_1px)] bg-[size:48px_48px]"></div>
 
-        {success ? (
-          <div className="space-y-4">
-            <div className="p-3 text-sm font-medium text-[#22C55E] bg-[#22C55E]/10 border border-dashed border-[#22C55E] rounded-sm">
-              Registration successful! Please check your email for verification.
-            </div>
-            <div className="text-center">
-              <Link href="/login" className="text-xs text-primary hover:underline font-mono">
-                [ RETURN TO SIGN IN ]
-              </Link>
-            </div>
-          </div>
-        ) : (
-          <form onSubmit={handleRegister} className="space-y-4">
-            {error && (
-              <div className="p-3 text-sm font-medium text-[#EF4444] bg-[#EF4444]/10 border border-dashed border-[#EF4444] rounded-sm">
-                {error}
+      {/* Mouse Glow Effect */}
+      <div
+        ref={mouseGlowRef}
+        className="absolute inset-0 pointer-events-none transition-opacity duration-300"
+        style={{ opacity: 1 }}
+      />
+
+      <div className="relative z-10 min-h-screen flex">
+        {/* Left Side - Branding Corner Card */}
+        <div className="hidden lg:flex lg:w-1/2 flex-col justify-between p-16">
+          <div>
+            <Link href="/" className="inline-flex items-center space-x-3 group cursor-pointer">
+              <div className="text-6xl bg-[#0A0A0A]/80 border-dashed border-2 border-[#333333] p-6 pb-8 font-bold tracking-tight text-white shadow-[0_0_50px_rgba(124,58,237,0.1)] group-hover:border-primary/50 transition-colors duration-500">
+                <span className="text-primary group-hover:text-white transition-colors duration-500">
+                  //
+                </span>
+                ARMOR
+                <span className="text-[#555555] group-hover:text-white transition-colors duration-500">
+                  IQ
+                </span>
               </div>
-            )}
-            <div className="space-y-2">
-              <Label htmlFor="email" className="text-xs text-muted-foreground">// EMAIL</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="admin@armoriq.io"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="bg-[#000000] border-dashed focus-visible:ring-1 focus-visible:ring-[#444444]"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password" className="text-xs text-muted-foreground">// PASSWORD</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                className="bg-[#000000] border-dashed focus-visible:ring-1 focus-visible:ring-[#444444]"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="confirm-password" className="text-xs text-muted-foreground">// CONFIRM PASSWORD</Label>
-              <Input
-                id="confirm-password"
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-                className="bg-[#000000] border-dashed focus-visible:ring-1 focus-visible:ring-[#444444]"
-              />
-            </div>
-            <Button type="submit" className="w-full font-mono text-xs tracking-wider" disabled={loading}>
-              {loading ? '[ REGISTERING... ]' : '[ REGISTER ]'}
-            </Button>
-          </form>
-        )}
-
-        {!success && (
-          <div className="mt-4 text-center">
-            <Link href="/login" className="text-xs text-primary hover:underline font-mono">
-              [ RETURN TO SIGN IN ]
             </Link>
           </div>
-        )}
 
-        <div className="mt-6 pt-4 border-t border-dashed border-[#1A1A1A] text-xs text-muted-foreground text-center">
-          // v1.0.0 · armoriq
+          <div className="space-y-6">
+            <div className="max-w-md">
+              <h1 className="text-3xl font-bold text-white mb-4">
+                Agents shouldn't run <span className="text-primary">blind.</span> They need{" "}
+                <span className="text-primary italic underline decoration-primary/30 underline-offset-8">
+                  guardrails.
+                </span>
+              </h1>
+              <p className="text-muted-foreground text-sm leading-relaxed">
+                Cryptographically signed audit logs, real-time threat intelligence, and deterministic policy enforcement for your AI workflows.
+              </p>
+            </div>
+
+            <div className="text-xs text-[#555555] font-medium tracking-widest uppercase">
+              // v1.0.0 · armoriq secure shell
+            </div>
+          </div>
+        </div>
+
+        {/* Right Side - Auth Form */}
+        <div className="flex-1 flex items-center justify-center p-6 lg:p-12">
+          <div className="w-full max-w-lg bg-[#0A0A0A]/80 backdrop-blur-xl border border-dashed border-[#333333] p-8 lg:p-12 shadow-[0_0_50px_rgba(124,58,237,0.05)] rounded-none relative">
+            <div className="absolute top-0 right-0 w-16 h-16 border-l border-b border-dashed border-[#333333] flex items-center justify-center">
+              <span className="text-[#333333] text-xs">A-IQ</span>
+            </div>
+            
+            <div className="mb-10">
+              <h2 className="text-3xl font-bold tracking-tight text-primary mb-2">// CREATE ADMIN</h2>
+              <p className="text-sm text-muted-foreground">
+                Register a new administrative identity.
+              </p>
+            </div>
+
+            {success ? (
+              <div className="space-y-6">
+                <div className="p-4 text-sm font-medium text-[#22C55E] bg-[#22C55E]/10 border border-dashed border-[#22C55E]">
+                  Registration successful! Please check your email for verification.
+                </div>
+                <div className="text-center">
+                  <Link href="/login" className="text-primary hover:underline font-mono text-sm">
+                    [ RETURN TO SIGN IN ]
+                  </Link>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleRegister} className="space-y-6">
+                {error && (
+                  <div className="p-4 text-sm font-medium text-[#EF4444] bg-[#EF4444]/10 border border-dashed border-[#EF4444]">
+                    {error}
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label htmlFor="email" className="text-xs font-medium text-muted-foreground tracking-widest uppercase">// EMAIL ADDRESS</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="admin@armoriq.io"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    disabled={loading}
+                    className="h-12 bg-[#000000] border-dashed border-[#333333] focus-visible:ring-1 focus-visible:ring-primary rounded-none transition-colors"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="password" className="text-xs font-medium text-muted-foreground tracking-widest uppercase">// PASSWORD</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    disabled={loading}
+                    className="h-12 bg-[#000000] border-dashed border-[#333333] focus-visible:ring-1 focus-visible:ring-primary rounded-none transition-colors"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="confirm-password" className="text-xs font-medium text-muted-foreground tracking-widest uppercase">// CONFIRM PASSWORD</Label>
+                  <Input
+                    id="confirm-password"
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
+                    disabled={loading}
+                    className="h-12 bg-[#000000] border-dashed border-[#333333] focus-visible:ring-1 focus-visible:ring-primary rounded-none transition-colors"
+                  />
+                </div>
+                <Button type="submit" className="w-full h-12 font-mono text-sm tracking-widest rounded-none shadow-[0_0_20px_rgba(124,58,237,0.2)] hover:bg-primary/90 transition-all" disabled={loading}>
+                  {loading ? '[ REGISTERING... ]' : '[ REGISTER ]'}
+                </Button>
+              </form>
+            )}
+
+            {!success && (
+              <div className="mt-8 text-center">
+                <p className="text-sm text-muted-foreground">
+                  Already have an account?{" "}
+                  <Link href="/login" className="text-primary hover:underline font-medium transition-colors">
+                    [ RETURN TO SIGN IN ]
+                  </Link>
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
