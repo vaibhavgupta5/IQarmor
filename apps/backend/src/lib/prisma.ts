@@ -20,7 +20,7 @@ export const prisma =
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 
-// @ts-expect-error Prisma type generation edge case
+
 prisma.$on('error', (e: any) => {
   logger.error({ err: e }, 'Prisma error');
 });

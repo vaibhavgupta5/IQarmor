@@ -19,7 +19,7 @@
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down"
   },
-  "devDependencies": {
+  "dependencies": {
     "@prisma/client": "^6.19.3",
     "prisma": "^6.19.3",
     "ts-node": "^10.9.2",

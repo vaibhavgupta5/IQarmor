@@ -9,9 +9,8 @@
     "test": "node --test dist/**/*.test.js"
   },
   "dependencies": {
-    "@armoriq/shared": "*"
-  },
-  "devDependencies": {
+    "@armoriq/shared": "*",
     "typescript": "^5.4.0"
-  }
+  },
+  "devDependencies": {}
 }

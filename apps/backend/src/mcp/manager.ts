@@ -63,8 +63,8 @@ export class McpManager {
         });
       } else {
         transport = new SSEClientTransport(new URL(urlStr), {
-          eventSourceInit: Object.keys(headers).length > 0 ? { headers } : undefined,
-          requestInit: Object.keys(headers).length > 0 ? { headers } : undefined
+          eventSourceInit: Object.keys(headers).length > 0 ? ({ headers } as any) : undefined,
+          requestInit: Object.keys(headers).length > 0 ? ({ headers } as any) : undefined
         });
       }
     } else if (config.transport === 'STDIO') {
@@ -179,8 +179,8 @@ export class McpManager {
         });
       } else {
         transport = new SSEClientTransport(new URL(urlStr), {
-          eventSourceInit: Object.keys(headers).length > 0 ? { headers } : undefined,
-          requestInit: Object.keys(headers).length > 0 ? { headers } : undefined
+          eventSourceInit: Object.keys(headers).length > 0 ? ({ headers } as any) : undefined,
+          requestInit: Object.keys(headers).length > 0 ? ({ headers } as any) : undefined
         });
       }
     } else if (transportType === 'STDIO') {

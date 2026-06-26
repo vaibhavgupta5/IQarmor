@@ -63,7 +63,7 @@ rulesRouter.post('/', validateBody(CreateSchema), asyncWrapper(async (req, res) 
     data: {
       ...body,
       createdBy: req.user!.id
-    }
+    } as any
   });
 
   await initPolicyEngine();

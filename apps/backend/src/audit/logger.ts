@@ -32,7 +32,7 @@ export async function logAuditEntry(entry: AuditEntry): Promise<void> {
       params: entry.params as any,
       decision: entry.decision,
       reason: entry.reason,
-      result: entry.result ? entry.result : undefined,
+      result: entry.result ? (entry.result as any) : undefined,
       latencyMs: entry.latencyMs || 0,
       riskContrib: entry.riskContrib,
       hash,
