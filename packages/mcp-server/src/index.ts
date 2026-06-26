@@ -11,60 +11,64 @@ import { lookupCve, lookupCveSchema } from './tools/lookup-cve';
 import { scanUrl, scanUrlSchema } from './tools/scan-url';
 import { getThreatSummary, getThreatSummarySchema } from './tools/get-threat-summary';
 
-const server = new McpServer({
-  name: 'threatintel-mcp',
-  version: '1.0.0',
-});
+function createServerInstance() {
+  const server = new McpServer({
+    name: 'threatintel-mcp',
+    version: '1.0.0',
+  });
 
-(server as any).tool(
-  'check_domain',
-  'Check if a domain is malicious using VirusTotal threat intelligence',
-  { domain: z.string().min(3).max(253) },
-  async (args: any) => {
-    const result = await checkDomain(args as any);
-    return { content: [{ type: 'text', text: JSON.stringify(result) }] };
-  }
-);
+  (server as any).tool(
+    'check_domain',
+    'Check if a domain is malicious using VirusTotal threat intelligence',
+    { domain: z.string().min(3).max(253) },
+    async (args: any) => {
+      const result = await checkDomain(args as any);
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    }
+  );
 
-(server as any).tool(
-  'check_ip',
-  'Check if an IP address is malicious using AbuseIPDB',
-  { ip: z.string().ip() },
-  async (args: any) => {
-    const result = await checkIp(args as any);
-    return { content: [{ type: 'text', text: JSON.stringify(result) }] };
-  }
-);
+  (server as any).tool(
+    'check_ip',
+    'Check if an IP address is malicious using AbuseIPDB',
+    { ip: z.string().ip() },
+    async (args: any) => {
+      const result = await checkIp(args as any);
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    }
+  );
 
-(server as any).tool(
-  'lookup_cve',
-  'Look up vulnerability details by CVE ID using NIST NVD',
-  { cveId: z.string().regex(/^CVE-\d{4}-\d{4,}$/i) },
-  async (args: any) => {
-    const result = await lookupCve(args as any);
-    return { content: [{ type: 'text', text: JSON.stringify(result) }] };
-  }
-);
+  (server as any).tool(
+    'lookup_cve',
+    'Look up vulnerability details by CVE ID using NIST NVD',
+    { cveId: z.string().regex(/^CVE-\d{4}-\d{4,}$/i) },
+    async (args: any) => {
+      const result = await lookupCve(args as any);
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    }
+  );
 
-(server as any).tool(
-  'scan_url',
-  'Submit a URL to UrlScan.io and get the scan results',
-  { url: z.string().url() },
-  async (args: any) => {
-    const result = await scanUrl(args as any);
-    return { content: [{ type: 'text', text: JSON.stringify(result) }] };
-  }
-);
+  (server as any).tool(
+    'scan_url',
+    'Submit a URL to UrlScan.io and get the scan results',
+    { url: z.string().url() },
+    async (args: any) => {
+      const result = await scanUrl(args as any);
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    }
+  );
 
-(server as any).tool(
-  'get_threat_summary',
-  'Auto-detect input type (domain, ip, cve, url) and get threat intel summary',
-  { query: z.string().min(3).max(200) },
-  async (args: any) => {
-    const result = await getThreatSummary(args as any);
-    return { content: [{ type: 'text', text: JSON.stringify(result) }] };
-  }
-);
+  (server as any).tool(
+    'get_threat_summary',
+    'Auto-detect input type (domain, ip, cve, url) and get threat intel summary',
+    { query: z.string().min(3).max(200) },
+    async (args: any) => {
+      const result = await getThreatSummary(args as any);
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    }
+  );
+
+  return server;
+}
 
 const app = express();
 app.use((req, res, next) => {
@@ -92,6 +96,7 @@ app.get('/mcp', async (req, res) => {
     transports.delete(sessionId);
   };
 
+  const server = createServerInstance();
   await server.connect(transport);
 });
 
