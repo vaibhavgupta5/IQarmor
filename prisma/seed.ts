@@ -59,7 +59,7 @@ async function main() {
       data: {
         name: 'threatintel-mcp',
         transport: 'STREAMABLE_HTTP',
-        config: { url: 'http://localhost:3002/mcp' },
+        config: { url: process.env.THREATINTEL_MCP_URL || 'http://localhost:3002/mcp' },
         isActive: true,
         allowedTools: [],
         discoveredTools: [],
