@@ -54,10 +54,13 @@ export class McpManager {
         headers['CONTEXT7_API_KEY'] = apiKey;
         headers['Authorization'] = `Bearer ${apiKey}`;
       }
+      
+      // Add standard browser User-Agent to prevent WAF blocking
+      headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
       transport = new SSEClientTransport(new URL(urlStr), {
-        eventSourceInit: Object.keys(headers).length > 0 ? ({ headers } as any) : undefined,
-        requestInit: Object.keys(headers).length > 0 ? ({ headers } as any) : undefined
+        eventSourceInit: { headers } as any,
+        requestInit: { headers } as any
       });
     } else if (config.transport === 'STDIO') {
       const parts = urlStr.split(' ');
@@ -187,10 +190,13 @@ export class McpManager {
         headers['CONTEXT7_API_KEY'] = apiKey;
         headers['Authorization'] = `Bearer ${apiKey}`;
       }
+      
+      // Add standard browser User-Agent to prevent WAF blocking
+      headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
       transport = new SSEClientTransport(new URL(urlStr), {
-        eventSourceInit: Object.keys(headers).length > 0 ? ({ headers } as any) : undefined,
-        requestInit: Object.keys(headers).length > 0 ? ({ headers } as any) : undefined
+        eventSourceInit: { headers } as any,
+        requestInit: { headers } as any
       });
     } else if (transportType === 'STDIO') {
       const parts = urlStr.split(' ');
